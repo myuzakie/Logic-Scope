@@ -27,6 +27,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * File-backed implementation of {@link ProjectRegistry}.
@@ -48,8 +50,17 @@ public final class FileProjectRegistry implements ProjectRegistry {
 
     private static final ObjectMapper MAPPER = buildMapper();
 
+    /**
+     * JVM-level locks keyed by canonical registry file path.
+     * Prevents {@link java.nio.channels.OverlappingFileLockException} when multiple
+     * {@link FileProjectRegistry} instances in the same JVM access the same file.
+     */
+    private static final ConcurrentHashMap<String, ReentrantLock> JVM_LOCKS =
+            new ConcurrentHashMap<>();
+
     private final Path registryFile;
     private final Path lockFile;
+    private final ReentrantLock jvmLock;
 
     public FileProjectRegistry(WorkspaceManager workspaceManager) {
         this(workspaceManager.registryFile());
@@ -59,13 +70,17 @@ public final class FileProjectRegistry implements ProjectRegistry {
     FileProjectRegistry(Path registryFile) {
         this.registryFile = registryFile;
         this.lockFile = registryFile.resolveSibling(registryFile.getFileName() + ".lock");
+        this.jvmLock = JVM_LOCKS.computeIfAbsent(
+                registryFile.toAbsolutePath().normalize().toString(),
+                k -> new ReentrantLock());
     }
 
     @Override
     public void save(ProjectRecord record) throws IOException {
         Files.createDirectories(registryFile.getParent());
+        jvmLock.lock();
         try (var lockChannel = openLockFile();
-             var ignored = lockChannel.lock()) { // exclusive lock
+             var ignored = lockChannel.lock()) { // exclusive OS-level lock for cross-process safety
             List<ProjectRecord> records = readUnderLock();
             Map<String, ProjectRecord> byId = new LinkedHashMap<>();
             for (ProjectRecord existing : records) {
@@ -73,6 +88,8 @@ public final class FileProjectRegistry implements ProjectRegistry {
             }
             byId.put(record.id().value(), record);
             writeUnderLock(new ArrayList<>(byId.values()));
+        } finally {
+            jvmLock.unlock();
         }
     }
 
@@ -86,9 +103,12 @@ public final class FileProjectRegistry implements ProjectRegistry {
         if (!Files.exists(registryFile)) {
             return List.of();
         }
+        jvmLock.lock();
         try (var lockChannel = openLockFile();
-             var ignored = lockChannel.lock(0, Long.MAX_VALUE, true)) { // shared lock
+             var ignored = lockChannel.lock(0, Long.MAX_VALUE, true)) { // shared OS-level lock
             return readUnderLock();
+        } finally {
+            jvmLock.unlock();
         }
     }
 

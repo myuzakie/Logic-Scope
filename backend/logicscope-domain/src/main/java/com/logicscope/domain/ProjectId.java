@@ -59,7 +59,7 @@ public record ProjectId(String value) {
      *   <li>Credentials (user:pass@) are removed.</li>
      * </ul>
      */
-    static String normalizeGitUrl(String url) {
+    public static String normalizeGitUrl(String url) {
         // Remove userinfo if present: https://user:pass@host/path → https://host/path
         String cleaned = url.replaceFirst("(https?://)([^@]+@)", "$1");
         // Lower-case scheme and host, preserve path

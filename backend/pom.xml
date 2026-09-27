@@ -14,6 +14,7 @@
         <module>logicscope-domain</module>
         <module>logicscope-discovery</module>
         <module>logicscope-project</module>
+        <module>logicscope-runtime</module>
         <module>logicscope-cli</module>
         <module>logicscope-trace</module>
         <module>logicscope-source</module>

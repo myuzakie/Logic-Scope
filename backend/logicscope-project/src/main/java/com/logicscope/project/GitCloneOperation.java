@@ -197,7 +197,7 @@ public final class GitCloneOperation {
     /** Abstraction over ProcessBuilder to enable testing without network access. */
     interface ProcessFactory {
         ProcessResult run(int timeoutSeconds, List<String> command)
-                throws IOException, InterruptedException;
+                throws IOException, InterruptedException, GitCloneException;
     }
 
     private static final class DefaultProcessFactory implements ProcessFactory {
@@ -220,7 +220,7 @@ public final class GitCloneOperation {
             boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
-                throw new GitCloneException("git process timed out after " + timeoutSeconds + "s");
+                throw new IOException("git process timed out after " + timeoutSeconds + "s");
             }
             return new ProcessResult(process.exitValue(), stdout);
         }
