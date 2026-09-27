@@ -5,12 +5,18 @@ import com.logicscope.discovery.RepositoryInspector;
 import com.logicscope.domain.CapabilityAssessment;
 import com.logicscope.domain.CapabilityReport;
 import com.logicscope.domain.CapabilityStatus;
+import com.logicscope.domain.ProjectRecord;
 import com.logicscope.domain.RepositoryCapability;
+import com.logicscope.project.FileProjectRegistry;
+import com.logicscope.project.ProjectService;
+import com.logicscope.project.WorkspaceManager;
+import com.logicscope.project.GitCloneOperation;
 
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -18,32 +24,60 @@ public final class LogicScopeCli {
     private static final String USAGE = "Usage:\n"
             + "  logicscope init [target-project]\n"
             + "  logicscope run [target-project]\n"
-            + "  logicscope scan <repository>";
+            + "  logicscope scan <repository>\n"
+            + "  logicscope load <path-or-https-url>\n"
+            + "  logicscope projects\n"
+            + "  logicscope inspect <project-id>";
 
     private final RepositoryInspector inspector;
     private final AppArtifactLocator artifactLocator;
     private final ServerRuntime serverRuntime;
+    private final ProjectService projectService;
     private final PrintStream output;
     private final PrintStream error;
     private final Supplier<Path> currentDirectory;
 
     public LogicScopeCli(RepositoryInspector inspector, PrintStream output, PrintStream error) {
-        this(inspector, new AppArtifactLocator(), ServerRuntime.createDefault(output, error), output, error);
+        this(inspector, new AppArtifactLocator(), ServerRuntime.createDefault(output, error),
+                createDefaultProjectService(inspector), output, error);
     }
 
     LogicScopeCli(RepositoryInspector inspector, AppArtifactLocator artifactLocator, ServerRuntime serverRuntime,
                   PrintStream output, PrintStream error) {
-        this(inspector, artifactLocator, serverRuntime, output, error, () -> Path.of("."));
+        this(inspector, artifactLocator, serverRuntime,
+                createDefaultProjectService(inspector), output, error, () -> Path.of("."));
     }
 
     LogicScopeCli(RepositoryInspector inspector, AppArtifactLocator artifactLocator, ServerRuntime serverRuntime,
                   PrintStream output, PrintStream error, Supplier<Path> currentDirectory) {
+        this(inspector, artifactLocator, serverRuntime,
+                createDefaultProjectService(inspector), output, error, currentDirectory);
+    }
+
+    LogicScopeCli(RepositoryInspector inspector, AppArtifactLocator artifactLocator, ServerRuntime serverRuntime,
+                  ProjectService projectService, PrintStream output, PrintStream error) {
+        this(inspector, artifactLocator, serverRuntime, projectService, output, error, () -> Path.of("."));
+    }
+
+    LogicScopeCli(RepositoryInspector inspector, AppArtifactLocator artifactLocator, ServerRuntime serverRuntime,
+                  ProjectService projectService, PrintStream output, PrintStream error,
+                  Supplier<Path> currentDirectory) {
         this.inspector = inspector;
         this.artifactLocator = artifactLocator;
         this.serverRuntime = serverRuntime;
+        this.projectService = projectService;
         this.output = output;
         this.error = error;
         this.currentDirectory = currentDirectory;
+    }
+
+    private static ProjectService createDefaultProjectService(RepositoryInspector inspector) {
+        WorkspaceManager workspaceManager = new WorkspaceManager();
+        return new ProjectService(
+                new FileProjectRegistry(workspaceManager),
+                workspaceManager,
+                new GitCloneOperation(),
+                inspector);
     }
 
     public static void main(String[] args) {
@@ -62,6 +96,9 @@ public final class LogicScopeCli {
             case "init" -> handleInit(args);
             case "run" -> handleRun(args);
             case "scan" -> handleScan(args);
+            case "load" -> handleLoad(args);
+            case "projects" -> handleProjects(args);
+            case "inspect" -> handleInspect(args);
             default -> {
                 error.println("Unknown command: " + args[0]);
                 error.println(USAGE);
@@ -228,5 +265,97 @@ public final class LogicScopeCli {
         }
         return report.diagnostics().isEmpty() ? "Repository is outside the supported capability envelope."
                 : report.diagnostics().getFirst();
+    }
+
+    // ---- load / projects / inspect ----
+
+    private int handleLoad(String[] args) {
+        if (args.length != 2 || args[1].isBlank()) {
+            error.println(USAGE);
+            return 2;
+        }
+        String source = args[1];
+        try {
+            ProjectRecord record;
+            if (source.startsWith("https://")) {
+                output.println("Loading Git repository: " + source);
+                record = projectService.loadGit(source);
+            } else {
+                Path path = Path.of(source).toAbsolutePath().normalize();
+                output.println("Loading local path: " + path);
+                record = projectService.loadLocal(path);
+            }
+            printProjectRecord(record);
+            return record.status().name().equals("FAILED") ? 1 : 0;
+        } catch (IllegalArgumentException e) {
+            error.println("Load failed: " + e.getMessage());
+            return 1;
+        } catch (IOException e) {
+            error.println("Registry error: " + e.getMessage());
+            return 1;
+        }
+    }
+
+    private int handleProjects(String[] args) {
+        try {
+            List<ProjectRecord> records = projectService.list();
+            if (records.isEmpty()) {
+                output.println("No projects registered.");
+                output.println("Use: logicscope load <path-or-https-url>");
+            } else {
+                output.println("Registered projects (" + records.size() + "):");
+                output.println();
+                for (ProjectRecord record : records) {
+                    printProjectRecord(record);
+                }
+            }
+            return 0;
+        } catch (IOException e) {
+            error.println("Registry error: " + e.getMessage());
+            return 1;
+        }
+    }
+
+    private int handleInspect(String[] args) {
+        if (args.length != 2 || args[1].isBlank()) {
+            error.println(USAGE);
+            return 2;
+        }
+        String id = args[1];
+        try {
+            CapabilityReport report = projectService.inspect(id);
+            output.println("Inspection result for project: " + id);
+            output.println("Note: capability detection is based on metadata only.");
+            output.println("      Results do not indicate runtime readiness.");
+            output.println();
+            printReport(report);
+            return report.isSupported() ? 0 : 1;
+        } catch (IllegalArgumentException e) {
+            error.println("Inspect failed: " + e.getMessage());
+            return 1;
+        } catch (IOException e) {
+            error.println("Registry error: " + e.getMessage());
+            return 1;
+        }
+    }
+
+    private void printProjectRecord(ProjectRecord record) {
+        output.println("Project ID  : " + record.id().value());
+        output.println("Name        : " + record.name());
+        output.println("Source type : " + record.sourceType().name());
+        if (record.sourceUrl() != null) {
+            output.println("Source URL  : " + record.sourceUrl());
+        }
+        if (record.localPath() != null) {
+            output.println("Local path  : " + record.localPath());
+        }
+        if (record.commitSha() != null) {
+            output.println("Commit SHA  : " + record.commitSha());
+        }
+        output.println("Status      : " + record.status().name());
+        if (record.failureReason() != null) {
+            output.println("Failure     : " + record.failureReason());
+        }
+        output.println();
     }
 }
