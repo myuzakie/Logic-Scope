@@ -52,8 +52,8 @@ public record TargetRuntimeConfig(
     }
 
     public record Otel(String javaAgentVersion, String javaAgentSha256, Path javaAgentPath,
-                       String endpoint, String serviceName, Map<String, String> resourceAttributes,
-                       List<String> includeProperties) {
+                       String endpoint, Protocol protocol, String serviceName,
+                       Map<String, String> resourceAttributes, List<String> includeProperties) {
         public Otel {
             javaAgentVersion = requireText(javaAgentVersion, "javaAgentVersion");
             javaAgentSha256 = requireText(javaAgentSha256, "javaAgentSha256").toLowerCase();
@@ -62,6 +62,7 @@ public record TargetRuntimeConfig(
             }
             javaAgentPath = Objects.requireNonNull(javaAgentPath, "javaAgentPath").toAbsolutePath().normalize();
             endpoint = requireText(endpoint, "endpoint");
+            protocol = Objects.requireNonNull(protocol, "protocol");
             serviceName = requireText(serviceName, "serviceName");
             resourceAttributes = Map.copyOf(Objects.requireNonNull(resourceAttributes, "resourceAttributes"));
             includeProperties = List.copyOf(Objects.requireNonNull(includeProperties, "includeProperties"));
@@ -71,6 +72,21 @@ public record TargetRuntimeConfig(
     public enum Strategy {
         HTTP,
         TCP
+    }
+
+    public enum Protocol {
+        GRPC("grpc"),
+        HTTP_PROTOBUF("http/protobuf");
+
+        private final String agentValue;
+
+        Protocol(String agentValue) {
+            this.agentValue = agentValue;
+        }
+
+        public String agentValue() {
+            return agentValue;
+        }
     }
 
     private static String requireText(String value, String name) {
