@@ -78,7 +78,7 @@ class LogicScopeCliTest {
 
         assertEquals(2, result.exitCode());
         assertTrue(result.stderr().contains("Usage:"));
-        assertTrue(result.stderr().contains("./logicscope scan <repository>"));
+        assertTrue(result.stderr().contains("logicscope scan <repository>"));
     }
 
     @Test
@@ -95,6 +95,15 @@ class LogicScopeCliTest {
         CliResult result = run("init", tempDir.toString());
 
         assertEquals(0, result.exitCode());
+        assertTrue(result.stdout().contains("LogicScope initialized at:"));
+    }
+
+    @Test
+    void initializesCurrentDirectoryWhenPathIsOmitted() {
+        CliResult result = runFrom(tempDir, "init");
+
+        assertEquals(0, result.exitCode());
+        assertTrue(Files.isRegularFile(tempDir.resolve(".logicscope/config.yaml")));
         assertTrue(result.stdout().contains("LogicScope initialized at:"));
     }
 
@@ -122,7 +131,28 @@ class LogicScopeCliTest {
         CliResult result = run("run", tempDir.toString());
 
         assertEquals(1, result.exitCode());
-        assertTrue(result.stderr().contains("LogicScope configuration not found"));
+        assertTrue(result.stderr().contains("No LogicScope project configuration was found in this directory."));
+        assertTrue(result.stderr().contains("logicscope init " + tempDir.toAbsolutePath().normalize()));
+    }
+
+    @Test
+    void runUsesCurrentDirectoryWhenPathIsOmitted() throws Exception {
+        writeConfig("server:\n  port: 4377\n");
+        AppArtifactLocator missingLocator = new AppArtifactLocator(Optional::empty);
+        CliResult result = runFrom(tempDir, missingLocator, "run");
+
+        assertEquals(1, result.exitCode());
+        assertTrue(result.stderr().contains("LogicScope application artifact not found"));
+        assertFalse(result.stderr().contains("No LogicScope project configuration"));
+    }
+
+    @Test
+    void runShowsHelpfulMessageWhenCurrentDirectoryHasNoConfig() {
+        CliResult result = runFrom(tempDir, "run");
+
+        assertEquals(1, result.exitCode());
+        assertTrue(result.stderr().contains("No LogicScope project configuration was found in this directory."));
+        assertTrue(result.stderr().contains("  logicscope init " + tempDir.toAbsolutePath().normalize()));
     }
 
     @Test
@@ -182,6 +212,7 @@ class LogicScopeCliTest {
 
         FakeProcess process = new FakeProcess();
         AtomicReference<List<String>> startedCommand = new AtomicReference<>();
+        AtomicReference<URI> openedBrowserUrl = new AtomicReference<>();
         AtomicInteger healthCalls = new AtomicInteger();
 
         var stdout = new ByteArrayOutputStream();
@@ -200,12 +231,16 @@ class LogicScopeCliTest {
                 },
                 port -> true,
                 new PrintStream(stdout),
-                new PrintStream(stderr)
+                new PrintStream(stderr),
+                uri -> {
+                    openedBrowserUrl.set(uri);
+                    return false;
+                }
         );
 
         Thread runner = new Thread(() -> {
             int code = new LogicScopeCli(new MavenRepositoryInspector(), locator, runtime,
-                    new PrintStream(stdout), new PrintStream(stderr)).run(new String[]{"run", tempDir.toString()});
+                    new PrintStream(stdout), new PrintStream(stderr), () -> tempDir).run(new String[]{"run"});
             assertEquals(0, code);
         });
         runner.start();
@@ -216,8 +251,12 @@ class LogicScopeCliTest {
         assertEquals(1, healthCalls.get());
         assertTrue(startedCommand.get().contains(fakeJar.toString()));
         assertTrue(startedCommand.get().stream().anyMatch(arg -> arg.equals("--server.port=4377")));
-        assertTrue(stdout.toString().contains("LogicScope server started and health check passed:"));
-        assertTrue(stdout.toString().contains("http://localhost:4377"));
+        assertTrue(startedCommand.get().stream().anyMatch(arg -> arg.equals(
+                "--logicscope.target-project=" + tempDir.toAbsolutePath().normalize())));
+        assertEquals(URI.create("http://localhost:4377/dashboard/"), openedBrowserUrl.get());
+        assertTrue(stdout.toString().contains("LogicScope dashboard is ready:"));
+        assertTrue(stdout.toString().contains("http://localhost:4377/dashboard/"));
+        assertTrue(stdout.toString().contains("Open this URL in your browser"));
     }
 
     @Test
@@ -255,9 +294,20 @@ class LogicScopeCliTest {
     }
 
     private CliResult run(String... args) {
-        return runWith(new AppArtifactLocator(), ServerRuntime.createDefault(
-                new PrintStream(new ByteArrayOutputStream()),
-                new PrintStream(new ByteArrayOutputStream())), args);
+        return runFrom(Path.of("."), args);
+    }
+
+    private CliResult runFrom(Path currentDirectory, String... args) {
+        return runFrom(currentDirectory, new AppArtifactLocator(), args);
+    }
+
+    private CliResult runFrom(Path currentDirectory, AppArtifactLocator locator, String... args) {
+        var stdout = new ByteArrayOutputStream();
+        var stderr = new ByteArrayOutputStream();
+        ServerRuntime runtime = ServerRuntime.createDefault(new PrintStream(stdout), new PrintStream(stderr));
+        int exitCode = new LogicScopeCli(new MavenRepositoryInspector(), locator, runtime,
+                new PrintStream(stdout), new PrintStream(stderr), () -> currentDirectory).run(args);
+        return new CliResult(exitCode, stdout.toString(), stderr.toString());
     }
 
     private CliResult runWith(AppArtifactLocator locator, ServerRuntime runtime, String... args) {

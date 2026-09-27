@@ -12,18 +12,20 @@ import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 public final class LogicScopeCli {
     private static final String USAGE = "Usage:\n"
-            + "  ./logicscope init <target-project>\n"
-            + "  ./logicscope run [target-project]\n"
-            + "  ./logicscope scan <repository>";
+            + "  logicscope init [target-project]\n"
+            + "  logicscope run [target-project]\n"
+            + "  logicscope scan <repository>";
 
     private final RepositoryInspector inspector;
     private final AppArtifactLocator artifactLocator;
     private final ServerRuntime serverRuntime;
     private final PrintStream output;
     private final PrintStream error;
+    private final Supplier<Path> currentDirectory;
 
     public LogicScopeCli(RepositoryInspector inspector, PrintStream output, PrintStream error) {
         this(inspector, new AppArtifactLocator(), ServerRuntime.createDefault(output, error), output, error);
@@ -31,11 +33,17 @@ public final class LogicScopeCli {
 
     LogicScopeCli(RepositoryInspector inspector, AppArtifactLocator artifactLocator, ServerRuntime serverRuntime,
                   PrintStream output, PrintStream error) {
+        this(inspector, artifactLocator, serverRuntime, output, error, () -> Path.of("."));
+    }
+
+    LogicScopeCli(RepositoryInspector inspector, AppArtifactLocator artifactLocator, ServerRuntime serverRuntime,
+                  PrintStream output, PrintStream error, Supplier<Path> currentDirectory) {
         this.inspector = inspector;
         this.artifactLocator = artifactLocator;
         this.serverRuntime = serverRuntime;
         this.output = output;
         this.error = error;
+        this.currentDirectory = currentDirectory;
     }
 
     public static void main(String[] args) {
@@ -63,11 +71,12 @@ public final class LogicScopeCli {
     }
 
     private int handleInit(String[] args) {
-        if (args.length < 2 || args[1].isBlank()) {
+        if (args.length > 1 && args[1].isBlank()) {
             error.println(USAGE);
             return 2;
         }
-        Path target = Path.of(args[1]).toAbsolutePath().normalize();
+        Path target = (args.length < 2 ? currentDirectory.get() : Path.of(args[1]))
+                .toAbsolutePath().normalize();
         Path configDir = target.resolve(".logicscope");
         Path configFile = configDir.resolve("config.yaml");
 
@@ -99,14 +108,16 @@ public final class LogicScopeCli {
     private int handleRun(String[] args) {
         Path target;
         if (args.length < 2 || args[1].isBlank()) {
-            target = Path.of(".").toAbsolutePath().normalize();
+            target = currentDirectory.get().toAbsolutePath().normalize();
         } else {
             target = Path.of(args[1]).toAbsolutePath().normalize();
         }
 
         Path configFile = target.resolve(".logicscope").resolve("config.yaml");
-        if (!Files.exists(configFile)) {
-            error.println("LogicScope configuration not found. Run 'logicscope init " + target + "' first.");
+        if (!Files.isRegularFile(configFile)) {
+            error.println("No LogicScope project configuration was found in this directory.");
+            error.println("Run:");
+            error.println("  logicscope init " + target);
             return 1;
         }
 
@@ -133,7 +144,7 @@ public final class LogicScopeCli {
         output.println("Starting LogicScope server for project: " + target);
         output.println("Configuration: " + configFile);
         output.println("Application: " + appJar.get());
-        return serverRuntime.startAndAwait(appJar.get(), config.port());
+        return serverRuntime.startAndAwait(appJar.get(), config.port(), target);
     }
 
     private int handleScan(String[] args) {

@@ -5,4 +5,11 @@
     <parent><groupId>com.logicscope</groupId><artifactId>logicscope-backend</artifactId><version>0.1.0-SNAPSHOT</version></parent>
     <artifactId>logicscope-source</artifactId>
     <name>LogicScope Source</name>
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>

@@ -39,6 +39,11 @@
         </dependency>
         <dependency>
             <groupId>com.logicscope</groupId>
+            <artifactId>logicscope-source</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.logicscope</groupId>
             <artifactId>logicscope-discovery</artifactId>
             <version>${project.version}</version>
         </dependency>

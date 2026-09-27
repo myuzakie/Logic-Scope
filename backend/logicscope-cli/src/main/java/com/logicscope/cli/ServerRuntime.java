@@ -3,6 +3,7 @@ package com.logicscope.cli;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
+import java.awt.Desktop;
 import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
@@ -30,22 +31,33 @@ final class ServerRuntime {
     private final PortProbe portProbe;
     private final PrintStream output;
     private final PrintStream error;
+    private final BrowserOpener browserOpener;
 
     ServerRuntime(ProcessFactory processFactory, HealthProbe healthProbe, PortProbe portProbe,
                   PrintStream output, PrintStream error) {
+        this(processFactory, healthProbe, portProbe, output, error, dashboardUri -> false);
+    }
+
+    ServerRuntime(ProcessFactory processFactory, HealthProbe healthProbe, PortProbe portProbe,
+                  PrintStream output, PrintStream error, BrowserOpener browserOpener) {
         this.processFactory = processFactory;
         this.healthProbe = healthProbe;
         this.portProbe = portProbe;
         this.output = output;
         this.error = error;
+        this.browserOpener = browserOpener;
     }
 
     static ServerRuntime createDefault(PrintStream output, PrintStream error) {
         return new ServerRuntime(new DefaultProcessFactory(), new HttpHealthProbe(), new SocketPortProbe(),
-                output, error);
+                output, error, ServerRuntime::openBrowser);
     }
 
     int startAndAwait(Path appJar, int port) {
+        return startAndAwait(appJar, port, Path.of(".").toAbsolutePath().normalize());
+    }
+
+    int startAndAwait(Path appJar, int port, Path targetProject) {
         if (!portProbe.isAvailable(port)) {
             error.println("Port " + port + " is already in use.");
             return 1;
@@ -57,6 +69,7 @@ final class ServerRuntime {
         command.add("-jar");
         command.add(appJar.toString());
         command.add("--server.port=" + port);
+        command.add("--logicscope.target-project=" + targetProject.toAbsolutePath().normalize());
         command.add("--spring.autoconfigure.exclude=" + DATASOURCE_EXCLUDES);
         command.add("--spring.flyway.enabled=false");
 
@@ -104,9 +117,13 @@ final class ServerRuntime {
             return 1;
         }
 
+        URI dashboardUri = URI.create("http://localhost:" + port + "/dashboard/");
         output.println();
-        output.println("LogicScope server started and health check passed:");
-        output.println("http://localhost:" + port);
+        output.println("LogicScope dashboard is ready:");
+        output.println(dashboardUri);
+        if (!browserOpener.open(dashboardUri)) {
+            output.println("Open this URL in your browser to scan the project.");
+        }
         output.println();
         output.println("Press Ctrl+C to stop.");
 
@@ -122,6 +139,18 @@ final class ServerRuntime {
             destroyProcess(process);
             removeShutdownHookQuietly(shutdownHook);
             return 1;
+        }
+    }
+
+    private static boolean openBrowser(URI dashboardUri) {
+        if (!Desktop.isDesktopSupported()) {
+            return false;
+        }
+        try {
+            Desktop.getDesktop().browse(dashboardUri);
+            return true;
+        } catch (IOException | UnsupportedOperationException | SecurityException exception) {
+            return false;
         }
     }
 
@@ -170,6 +199,11 @@ final class ServerRuntime {
         } catch (IllegalStateException ignored) {
             // JVM already shutting down.
         }
+    }
+
+    @FunctionalInterface
+    interface BrowserOpener {
+        boolean open(URI dashboardUri);
     }
 
     @FunctionalInterface

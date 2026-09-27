@@ -12,7 +12,9 @@ LogicScope is local-first and intentionally starts as a modular monolith. The ba
 
 **`logicscope-cli`** — command-line interface. `LogicScopeCli` provides the `scan <repository>` command. Runs `MavenRepositoryInspector`, prints a formatted capability report, and exits with code `0` (supported), `1` (unsupported), or `2` (usage error).
 
-**`logicscope-app`** — runnable Spring Boot 3.x application. Exposes `GET /api/health` on port `4377`.
+**`logicscope-app`** — runnable Spring Boot 3.x application. Exposes `GET /api/health`, `POST /api/scan`, and `POST /api/investigate` on port `4377`; the dashboard is served at `/dashboard/`.
+
+**`logicscope-source`** — framework-independent Java source investigation. Performs case-insensitive literal searches in `.java` files, skipping symlinks and generated/vendor directories. It reports at most 50 matching lines, with snippets up to 800 characters, and skips files larger than 1 MiB. Results are ordered by relative path and line; class/method labels use conservative lexical heuristics. This module does not parse Java or perform AI, trace, replay, database, or MCP operations.
 
 **`logicscope-persistence`** — persistence adapters. PostgreSQL and Flyway connectivity.
 
@@ -21,7 +23,6 @@ LogicScope is local-first and intentionally starts as a modular monolith. The ba
 The following Maven modules exist in the repository but contain no implemented production logic:
 
 - **`logicscope-trace`** — planned runtime trace ingestion.
-- **`logicscope-source`** — planned source-code analysis and slicing.
 - **`logicscope-semantic`** — planned semantic and AI analysis.
 - **`logicscope-evidence`** — planned runtime evidence handling.
 - **`logicscope-replay`** — planned replay functionality.
@@ -47,15 +48,16 @@ The domain module stays framework-independent. It has no Spring Boot, OpenTeleme
 
 ## Planned investigation flow
 
-The following flow is the intended future direction. None of these stages beyond capability discovery are currently implemented:
+The following flow is the intended future direction. Source investigation and the dashboard are implemented; the runtime-driven stages remain planned:
 
 ```text
 repository capability discovery   [IMPLEMENTED]
+source investigation              [IMPLEMENTED]
   -> runtime trace                [PLANNED]
   -> execution slice              [PLANNED]
   -> semantic analysis            [PLANNED]
   -> runtime evidence             [PLANNED]
-  -> investigation UI / replay    [PLANNED]
+  -> replay                       [PLANNED]
 ```
 
 ## Known limitations of MavenRepositoryInspector

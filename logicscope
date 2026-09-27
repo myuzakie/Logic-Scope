@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repository_root="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
 export LOGICSCOPE_HOME="$repository_root"
 cli_jar="$repository_root/backend/logicscope-cli/target/logicscope-cli-0.1.0-SNAPSHOT.jar"
 app_jar="$repository_root/backend/logicscope-app/target/logicscope-app-0.1.0-SNAPSHOT.jar"
