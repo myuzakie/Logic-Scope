@@ -1,0 +1,28 @@
+# Java / Maven
+target/
+.classpath
+.project
+.settings/
+*.class
+
+# Local configuration and secrets
+.env
+.logicscope/
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local AI/editor rules
+.bob/
+
+# Unnamed scratch files
+backend/logicscope-evidence/Untitled

@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cli_jar="$repository_root/backend/logicscope-cli/target/logicscope-cli-0.1.0-SNAPSHOT.jar"
+
+if [[ ! -f "$cli_jar" ]]; then
+  echo "LogicScope CLI artifact not found. Build it first:" >&2
+  echo "  mvn -f backend/pom.xml clean package" >&2
+  exit 2
+fi
+
+java_bin="${JAVA_HOME:-}/bin/java"
+if [[ ! -x "$java_bin" ]]; then
+  java_bin="$(command -v java || true)"
+fi
+
+if [[ -z "$java_bin" || ! -x "$java_bin" ]]; then
+  echo "Java 21 or newer is required to run LogicScope CLI." >&2
+  exit 2
+fi
+
+java_version="$("$java_bin" -version 2>&1 | awk -F '"' '/version/ {print $2; exit}')"
+java_major="${java_version%%.*}"
+if [[ "$java_major" == "1" ]]; then
+  java_major="${java_version#1.}"
+  java_major="${java_major%%.*}"
+fi
+
+if [[ ! "$java_major" =~ ^[0-9]+$ ]] || (( java_major < 21 )); then
+  echo "Java 21 or newer is required to run LogicScope CLI; found ${java_version:-unknown}." >&2
+  echo "Set JAVA_HOME to a Java 21+ installation and try again." >&2
+  exit 2
+fi
+
+exec "$java_bin" -jar "$cli_jar" "$@"

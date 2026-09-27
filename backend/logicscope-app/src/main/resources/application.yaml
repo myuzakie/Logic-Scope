@@ -1,0 +1,23 @@
+server:
+  port: ${SERVER_PORT:4377}
+
+spring:
+  application:
+    name: logicscope
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/logicscope}
+    username: ${SPRING_DATASOURCE_USERNAME:logicscope}
+    password: ${SPRING_DATASOURCE_PASSWORD:logicscope}
+  flyway:
+    enabled: ${SPRING_FLYWAY_ENABLED:true}
+    locations: classpath:db/migration
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
