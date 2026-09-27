@@ -6,11 +6,13 @@ LogicScope is local-first and intentionally starts as a modular monolith. The ba
 
 ### Implemented modules
 
-**`logicscope-domain`** — framework-independent domain model. Contains value types and enums: `RepositoryCapability`, `CapabilityStatus`, `CapabilityAssessment`, `CapabilityReport`, `RepositoryLocation`, `EvidenceStatus`, `InvestigationId`, `SourceLocation`, `TraceId`. Has no Spring Boot, OpenTelemetry, PostgreSQL, Hibernate, IBM Bob, JavaParser, or HTTP-client dependency.
+**`logicscope-domain`** — framework-independent domain model. Contains value types and enums: `RepositoryCapability`, `CapabilityStatus`, `CapabilityAssessment`, `CapabilityReport`, `RepositoryLocation`, `EvidenceStatus`, `InvestigationId`, `SourceLocation`, `TraceId`, `ProjectId`, `ProjectRecord`, `ProjectSourceType`, `ProjectStatus`. Has no Spring Boot, OpenTelemetry, PostgreSQL, Hibernate, IBM Bob, JavaParser, or HTTP-client dependency.
 
 **`logicscope-discovery`** — capability detection. `MavenRepositoryInspector` reads `pom.xml` files and local Java source to produce a `CapabilityReport`. See [Known limitations of MavenRepositoryInspector](#known-limitations-of-mavenrepositoryinspector) below.
 
-**`logicscope-cli`** — command-line interface. `LogicScopeCli` provides the `scan <repository>` command. Runs `MavenRepositoryInspector`, prints a formatted capability report, and exits with code `0` (supported), `1` (unsupported), or `2` (usage error).
+**`logicscope-project`** — project registration, Git clone, workspace management, and capability inspection. `ProjectService` accepts a local path or a public HTTPS Git URL, records a `ProjectRecord` with commit SHA, and delegates inspection to `MavenRepositoryInspector`. `FileProjectRegistry` persists records as JSON under `LOGICSCOPE_DATA_DIR` (default `~/.logicscope`). Only HTTPS Git URLs are accepted; credentials are not accepted in URLs. Capability detection results reflect metadata only and do not indicate runtime readiness.
+
+**`logicscope-cli`** — command-line interface. `LogicScopeCli` provides `scan`, `load`, `projects`, and `inspect` commands. `scan <repository>` runs `MavenRepositoryInspector` directly on a path. `load <path-or-https-url>` registers a project. `projects` lists registered projects. `inspect <project-id>` runs capability inspection on a registered project. Exits with code `0` (success/supported), `1` (failure/unsupported), or `2` (usage error).
 
 **`logicscope-app`** — runnable Spring Boot 3.x application. Exposes `GET /api/health`, `POST /api/scan`, and `POST /api/investigate` on port `4377`; the dashboard is served at `/dashboard/`.
 
@@ -33,10 +35,15 @@ These modules are reserved placeholders. Their `pom.xml` files register them in 
 
 ```text
 logicscope-app
-  -> logicscope-discovery, logicscope-trace, logicscope-source
+  -> logicscope-discovery, logicscope-project, logicscope-trace, logicscope-source
   -> logicscope-domain
 
 logicscope-cli
+  -> logicscope-project
+  -> logicscope-discovery
+  -> logicscope-domain
+
+logicscope-project
   -> logicscope-discovery
   -> logicscope-domain
 
