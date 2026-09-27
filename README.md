@@ -13,7 +13,8 @@ This repository contains the initial runnable foundation:
 - PostgreSQL and Flyway connectivity;
 - a minimal OpenTelemetry Collector configuration ready for future ingestion;
 - deterministic Maven repository capability discovery, including multi-module detection;
-- a CLI module (`logicscope-cli`) providing the `scan <repository>` command;
+- a CLI module (`logicscope-cli`) providing `init`, `run`, and `scan` commands;
+- per-project configuration via `.logicscope/config.yaml`;
 - tests using local fixtures only.
 
 ### Implemented modules
@@ -22,7 +23,7 @@ This repository contains the initial runnable foundation:
 |---|---|---|
 | `logicscope-domain` | Implemented | Framework-independent domain model |
 | `logicscope-discovery` | Implemented | Maven-based capability detection |
-| `logicscope-cli` | Implemented | `scan <repository>` command |
+| `logicscope-cli` | Implemented | `init`, `run`, `scan` commands |
 | `logicscope-app` | Implemented | Runnable Spring Boot application |
 | `logicscope-persistence` | Implemented | Persistence adapters (Flyway, PostgreSQL) |
 | `logicscope-trace` | Scaffolding only | Maven module; no production logic |
@@ -41,7 +42,29 @@ Gradle, Kafka, Spring WebFlux, Quarkus, Micronaut, Kubernetes, Node.js, Python, 
 
 ## CLI usage
 
-The `logicscope-cli` module provides the `scan` command. Run it from the project root wrapper:
+The `logicscope-cli` module provides commands for initializing and running LogicScope against a target project.
+
+### Initialize a project
+
+```bash
+./logicscope init <path-to-project>
+```
+
+Creates `.logicscope/config.yaml` in the target project directory. This must be run before other commands.
+
+Exit codes: `0` = success, `1` = failed, `2` = usage error.
+
+### Run LogicScope server
+
+```bash
+./logicscope run [path-to-project]
+```
+
+Reads `.logicscope/config.yaml`, locates the packaged `logicscope-app` JAR (via `LOGICSCOPE_HOME` or the repository layout), starts it as a child process, waits until `GET /api/health` returns HTTP 200 with status `UP`, then prints the confirmed localhost URL. Ctrl+C stops the child server.
+
+Requires a prior `mvn -f backend/pom.xml package` so both CLI and application artifacts exist.
+
+### Scan repository capabilities
 
 ```bash
 ./logicscope scan <path-to-repository>
@@ -95,18 +118,20 @@ Expected health response:
 {"status":"UP","service":"logicscope"}
 ```
 
-The future per-project configuration can live outside this repository at `.logicscope/config.yaml`:
+## Per-project configuration
+
+LogicScope stores configuration in the target project at `.logicscope/config.yaml`:
 
 ```yaml
 project:
   root: .
 runtime:
   type: local
-observability:
-  otlpEndpoint: http://localhost:4318
 server:
   port: 4377
 ```
+
+This file is created by `logicscope init` and read by `logicscope run`.
 
 ## Repository layout
 

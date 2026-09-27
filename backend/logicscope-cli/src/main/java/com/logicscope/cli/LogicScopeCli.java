@@ -7,17 +7,33 @@ import com.logicscope.domain.CapabilityReport;
 import com.logicscope.domain.CapabilityStatus;
 import com.logicscope.domain.RepositoryCapability;
 
+import java.io.IOException;
 import java.io.PrintStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Optional;
 
 public final class LogicScopeCli {
-    private static final String USAGE = "Usage:\n  ./logicscope scan <repository>";
+    private static final String USAGE = "Usage:\n"
+            + "  ./logicscope init <target-project>\n"
+            + "  ./logicscope run [target-project]\n"
+            + "  ./logicscope scan <repository>";
+
     private final RepositoryInspector inspector;
+    private final AppArtifactLocator artifactLocator;
+    private final ServerRuntime serverRuntime;
     private final PrintStream output;
     private final PrintStream error;
 
     public LogicScopeCli(RepositoryInspector inspector, PrintStream output, PrintStream error) {
+        this(inspector, new AppArtifactLocator(), ServerRuntime.createDefault(output, error), output, error);
+    }
+
+    LogicScopeCli(RepositoryInspector inspector, AppArtifactLocator artifactLocator, ServerRuntime serverRuntime,
+                  PrintStream output, PrintStream error) {
         this.inspector = inspector;
+        this.artifactLocator = artifactLocator;
+        this.serverRuntime = serverRuntime;
         this.output = output;
         this.error = error;
     }
@@ -34,20 +50,110 @@ public final class LogicScopeCli {
             error.println(USAGE);
             return 2;
         }
-        if (!"scan".equals(args[0])) {
-            error.println("Unknown command: " + args[0]);
+        return switch (args[0]) {
+            case "init" -> handleInit(args);
+            case "run" -> handleRun(args);
+            case "scan" -> handleScan(args);
+            default -> {
+                error.println("Unknown command: " + args[0]);
+                error.println(USAGE);
+                yield 2;
+            }
+        };
+    }
+
+    private int handleInit(String[] args) {
+        if (args.length < 2 || args[1].isBlank()) {
             error.println(USAGE);
             return 2;
         }
+        Path target = Path.of(args[1]).toAbsolutePath().normalize();
+        Path configDir = target.resolve(".logicscope");
+        Path configFile = configDir.resolve("config.yaml");
+
+        try {
+            if (!Files.exists(target)) {
+                error.println("Target path does not exist: " + target);
+                return 1;
+            }
+            if (!Files.isDirectory(target)) {
+                error.println("Target path is not a directory: " + target);
+                return 1;
+            }
+            if (Files.exists(configFile)) {
+                error.println("Configuration already exists: " + configFile);
+                return 1;
+            }
+
+            Files.createDirectories(configDir);
+            Files.writeString(configFile, buildDefaultConfig());
+
+            output.println("LogicScope initialized at: " + configFile);
+            return 0;
+        } catch (IOException e) {
+            error.println("Failed to initialize LogicScope: " + e.getMessage());
+            return 1;
+        }
+    }
+
+    private int handleRun(String[] args) {
+        Path target;
+        if (args.length < 2 || args[1].isBlank()) {
+            target = Path.of(".").toAbsolutePath().normalize();
+        } else {
+            target = Path.of(args[1]).toAbsolutePath().normalize();
+        }
+
+        Path configFile = target.resolve(".logicscope").resolve("config.yaml");
+        if (!Files.exists(configFile)) {
+            error.println("LogicScope configuration not found. Run 'logicscope init " + target + "' first.");
+            return 1;
+        }
+
+        ProjectConfig config;
+        try {
+            config = ProjectConfig.load(configFile);
+        } catch (IllegalArgumentException exception) {
+            error.println(exception.getMessage());
+            return 1;
+        } catch (IOException exception) {
+            error.println("Failed to read configuration: " + exception.getMessage());
+            return 1;
+        }
+
+        Optional<Path> appJar = artifactLocator.locate();
+        if (appJar.isEmpty()) {
+            error.println("LogicScope application artifact not found.");
+            error.println("Build it first:");
+            error.println("  mvn -f backend/pom.xml -pl logicscope-app -am package");
+            error.println("Or set LOGICSCOPE_HOME to the LogicScope repository root.");
+            return 1;
+        }
+
+        output.println("Starting LogicScope server for project: " + target);
+        output.println("Configuration: " + configFile);
+        output.println("Application: " + appJar.get());
+        return serverRuntime.startAndAwait(appJar.get(), config.port());
+    }
+
+    private int handleScan(String[] args) {
         if (args.length != 2 || args[1].isBlank()) {
             error.println(USAGE);
             return 2;
         }
-
         Path repository = Path.of(args[1]);
         CapabilityReport report = inspector.inspect(repository);
         printReport(report);
         return report.isSupported() ? 0 : 1;
+    }
+
+    private static String buildDefaultConfig() {
+        return "project:\n"
+                + "  root: .\n"
+                + "runtime:\n"
+                + "  type: local\n"
+                + "server:\n"
+                + "  port: 4377\n";
     }
 
     private void printReport(CapabilityReport report) {

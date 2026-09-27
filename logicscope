@@ -2,11 +2,19 @@
 set -euo pipefail
 
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export LOGICSCOPE_HOME="$repository_root"
 cli_jar="$repository_root/backend/logicscope-cli/target/logicscope-cli-0.1.0-SNAPSHOT.jar"
+app_jar="$repository_root/backend/logicscope-app/target/logicscope-app-0.1.0-SNAPSHOT.jar"
 
 if [[ ! -f "$cli_jar" ]]; then
   echo "LogicScope CLI artifact not found. Build it first:" >&2
   echo "  mvn -f backend/pom.xml clean package" >&2
+  exit 2
+fi
+
+if [[ "${1:-}" == "run" && ! -f "$app_jar" ]]; then
+  echo "LogicScope application artifact not found. Build it first:" >&2
+  echo "  mvn -f backend/pom.xml -pl logicscope-app -am package" >&2
   exit 2
 fi
 

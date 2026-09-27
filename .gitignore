@@ -26,3 +26,12 @@ Thumbs.db
 
 # Unnamed scratch files
 backend/logicscope-evidence/Untitled
+
+# Local Maven cache
+.m2/
+
+# Temporary end-to-end test project
+.e2e-test-project/
+
+# Local editor configuration
+.cursor/
